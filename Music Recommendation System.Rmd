@@ -1,0 +1,599 @@
+---
+title: "music recommendation system"
+author: "LI Han"
+date: "6/3/2020"
+output: html_document
+---
+
+### Part 1. EDA
+
+```{r Loading Packages, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(feather)
+library(data.table)
+library(viridis)
+library(DT)
+library(lubridate)
+library(magrittr)
+options(tibble.print_max = 5, tibble.print_min = 5)
+```
+
+
+  
+#### TRAIN set
+
+
+```{r train read, message=FALSE, warning=FALSE, results=FALSE, echo=FALSE}
+setwd('/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project')
+train <- as.tibble(fread('train.csv'))
+```
+
+
+
+```{r show train, message=FALSE,result='asis', warning=FALSE, echo=FALSE}
+train
+#datatable(head(train,5), style="bootstrap", class="table-condensed", options = list(dom = 'tp',scrollX = TRUE))
+```
+
+Defining useful functions , 
+
+```{r train - useful functions}
+## ggplot setting for readable labels
+readable_labs <- theme(axis.text=element_text(size=12),
+                     axis.title=element_text(size=14),
+                     plot.title = element_text(hjust = 0.5))
+
+# Function to dislpay count of each category of the column and plot how it affects target
+target_vs_column <-function(df, col_name, x , y, title)
+                  {
+  
+                  temp_df <- df %>% 
+                          group_by_(col_name) %>% 
+                          summarize(count = n(), mean_target = mean(target)) %>% 
+                          arrange(desc(mean_target)) 
+                  
+                  df_plot <- temp_df %>%  
+                            ggplot(aes_string(col_name, "mean_target")) + 
+                            geom_col(aes(fill=count)) +
+                            scale_fill_gradient(low='turquoise', high = 'violet')+
+                            coord_flip() +
+                            labs(x = x,
+                                 y = y,
+                                 title= title) +
+                            readable_labs
+                          
+                  print(df_plot)
+                  return (temp_df)
+                  
+                  }
+
+# Function to group songs and user by count and check it agains mean_target
+target_vs_colcount <- function(df, col_name, x, y, title)
+                    { 
+  
+                    df %>% 
+                      group_by_(col_name) %>% 
+                      summarize(count = n(), mean_target = mean(target)) %>% 
+                      group_by(count) %>% 
+                      summarize(new_count = n(), avg_target = mean(mean_target)) %>% 
+                      rename(no_of_items = new_count, occurence = count) %>% 
+                      print %>% 
+                      arrange(desc(avg_target)) %>% 
+                      print %>% 
+                      ggplot(aes(occurence, avg_target)) +
+                        geom_line(color='turquoise') +
+                        geom_smooth(color='turquoise') +
+                        labs(x = x,
+                             y = y,
+                             title= title) +
+                        readable_labs
+
+                  
+                  }
+
+```
+
+##### Train column count and its effect on target {.tabset}
+
+##### source_system_tab
+
+
+```{r sst}
+target_vs_column(train, col_name = "source_system_tab",
+                  x = 'Frequency',
+                  y = 'Target',
+                  title = 'Count of source_system_tab vs Target')
+```
+
+##### source_screen_name
+
+
+
+```{r ssn}
+target_vs_column(train, col_name = "source_screen_name",
+                  x = 'Frequency',
+                  y = 'Target',
+                  title = 'Count of source_screen_name vs Target')
+```
+
+##### source_type
+ 
+```{r st}
+target_vs_column(train, col_name = "source_type",
+                  x = 'Frequency',
+                  y = 'Target',
+                  title = 'Count of source_type vs Target')
+```
+
+#### Song count and User count vs target {.tabset}
+
+
+##### Song count vs Target
+
+
+```{r song count, message=FALSE, warning=FALSE}
+target_vs_colcount(train, "song_id", "Song Occurence", "Target", "Song Occurence vs Target")
+```
+
+##### User count vs Target
+
+If the user occurs more in the train data set (frequent listener) then it does not mean that they are more probable to repeat, given by the flat trend.  
+
+```{r user count, message=FALSE, warning=FALSE}
+target_vs_colcount(train, "msno", "User Occurence", "Target", "User Occurence vs Target")
+```
+
+
+##### Target is balanced
+
+```{r}
+train %>% 
+  group_by(target) %>% 
+  count
+```
+
+
+#### MEMBERS
+
+```{r read members, echo=FALSE, message=FALSE, warning=FALSE, results=FALSE}
+members <- as.tibble(fread('/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project/members.csv'))
+```
+
+
+```{r display members, echo=FALSE}
+members
+```
+
+Useful functions,
+
+```{r members function}
+members_colgroup <- function(df,col_name, x, y, title, xmin, xmax, ymin, ymax)
+{
+  
+  temp_df <- df %>% 
+    group_by_(col_name) %>% 
+    count() %>% 
+    arrange(desc(n))
+  
+  df_plot <- temp_df %>% 
+    ggplot(aes_string(col_name, "n")) + 
+    geom_col(fill='goldenrod2') + 
+    labs(x = x,
+         y = y,
+         title = title) +
+    xlim(xmin, xmax) +
+    ylim(ymin, ymax) +
+    readable_labs
+  
+  print(df_plot)
+  return(temp_df)
+  
+}
+
+members_date_count <- function(df, col_name, x, y, title)
+{
+  df %>% 
+    group_by_(month = month(col_name), year = year(col_name)) %>% 
+    count() %>% 
+    ungroup %>% 
+    mutate(date = as.Date(paste(as.character(year), as.character(month), '01', sep='-')))
+  ggplot(aes(date, n))+
+    geom_line(color='goldenrod2', size=1) +
+    labs(x = x,
+         y = y,
+         title= title) +
+    xlim(xmin, xmax) +
+    readable_labs
+}
+
+
+```
+
+#### Distribution of city, bd(age), gender {.tabset}
+
+##### Age
+  
+
+
+```{r age tab, warning=TRUE}
+members_colgroup(members, "bd", "Age", "Frequency", "Age Distribution", 1, 100, 0, 1000)
+```
+
+##### City
+
+
+
+```{r city tab, warning=TRUE}
+members_colgroup(members, "city", "City", "Frequency", "City Distribution", 0, 25, 0, 20000)
+```
+
+
+##### Gender
+
+
+```{r gender tab, warning=TRUE}
+members %>% 
+  group_by(gender) %>% 
+  count
+```
+
+
+##### Registered_via
+
+
+
+```{r reg tab, warning=TRUE}
+members_colgroup(members, "registered_via", "Registration Method", "Frequency", "Registration method Distribution", 0, 16, 0, 15000)
+```
+
+
+```{r date conversion}
+members %<>% 
+  mutate(registration_init_time = ymd(registration_init_time),
+         expiration_date = ymd(expiration_date))
+```
+
+##### Signup vs Expiration 
+
+
+
+```{r signup vs expiration, message=FALSE, warning=FALSE}
+#members_date_count(members, "registration_init_time", "Signup Date", "Number of Users", "Signup vs User Count")
+reg_count <- members %>% 
+  group_by(month = month(registration_init_time), year = year(registration_init_time)) %>% 
+  count() %>% 
+  ungroup %>% 
+  mutate(date = as.Date(paste(as.character(year), as.character(month), '01', sep='-'))) %>% 
+  arrange(desc(n)) %>% 
+  print
+
+exp_count <- members %>% 
+  group_by(month = month(expiration_date), year = year(expiration_date)) %>% 
+  count() %>% 
+  ungroup %>% 
+  mutate(date = as.Date(paste(as.character(year), as.character(month), '01', sep='-'))) %>% 
+  arrange(desc(n)) %>% 
+  print
+
+reg_count %>% 
+  left_join(exp_count, by="date") %>% 
+  ggplot() +
+  geom_line(aes(date, n.x), color='goldenrod2') +
+  geom_line(aes(date, n.y), color='mediumorchid') +
+  labs(y="Frequency", title="Registration and Expiration Distribution")+
+  readable_labs
+
+```
+
+##### Missingness in members
+
+
+```{r members missingness}
+members %>% 
+  mutate(cga = if_else(((city == 1) & (bd == 0) & (gender == "")), 1, 0),
+         cg =  if_else(((city == 1) & (gender == "")), 1, 0),
+         ca = if_else(((city == 1) & (bd == 0)), 1, 0),
+         ga =  if_else(((bd == 0) & (gender == "")), 1, 0)) %>% 
+  summarize(city_gender_age = sum(cga),
+            city_gender = sum(cg),
+            city_age = sum(ca),
+            gender_age =sum(ga))
+```
+
+
+
+
+#### SONGS
+
+```{r songs read, echo=FALSE, message=FALSE, results=FALSE, warning=FALSE, echo=FALSE}
+songs <- as.tibble(fread('/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project/songs.csv')) 
+```
+
+Songs DF,
+
+```{r songs display}
+songs
+```
+
+##### Top Items{.tabset}
+
+
+
+```{r top 100 function}
+top_100 <- function(df, col_name)
+{
+  temp_df <- df %>% 
+    group_by_(col_name) %>% 
+    count %>% 
+    arrange(desc(n)) %>% 
+    print
+  
+  return(temp_df)
+}
+```
+
+
+##### Top 100 Artists
+
+```{r top 100 artist}
+artist_count <- top_100(songs, "artist_name")
+```
+
+##### Top 100 Lyricist
+
+```{r top 100 lyricist}
+lyricist_count <- top_100(songs, "lyricist")
+```
+
+##### Top 100 composer
+
+```{r top 100 composer}
+composer_count <- top_100(songs, "composer")
+```
+
+##### Top 100 Language
+
+```{r top 100 language}
+language_count <- top_100(songs, "language")
+```
+
+
+`r sum(songs$artist_name == songs$lyricist)` songs have same artist and lyricist name.  
+`r sum(songs$lyricist == songs$composer)` songs have same lyricist and composer name.     
+`r sum(songs$artist_name == songs$composer)` songs have same artist and composer name.   
+`r sum(songs$artist_name == songs$lyricist)`songs have same artist and lyricist name.  
+
+
+
+##### Top Genre's
+
+
+```{r top genres, message=FALSE, warning=FALSE}
+genre_count <- songs %>% 
+  separate(genre_ids, c("one", "two", "three", "four", "five", "six", "seven", "eight"), extra="merge") %>% 
+  select(one:eight)%>% 
+  gather(one:eight, key="nth_id", value="genre_ids", na.rm=TRUE) %>% 
+  group_by(genre_ids) %>% 
+  count %>% 
+  arrange(desc(n)) %>% 
+  print()
+```
+
+##### Distribution of song length
+ 
+
+```{r song length dist, message=FALSE, warning=FALSE}
+songs %>% 
+  mutate(song_length = song_length/6e4) %>% 
+  ggplot(aes(song_length)) +
+  geom_histogram(binwidth = 0.25, fill='darkorchid3') +
+  labs(x='Song Length', y = 'Frequency', title = 'Distribution of song length') +
+  xlim(0, 15)
+```
+
+
+
+#### TEST
+
+```{r read test, message=FALSE, warning=FALSE}
+test <- as.tibble(fread('/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project/test.csv'))
+```
+
+Let's compare the test and train data frames.
+
+##### Distribution of test and train on columns {.tabset}
+
+```{r}
+test_train_plot <- function(train, test, col_name, x, y)
+  {
+  test %>% 
+  group_by_(col_name) %>% 
+  summarize(count = n()) %>% 
+  left_join(train %>% 
+              group_by_(col_name) %>% 
+              summarize(count = n()) , by=col_name) %>% 
+  mutate(ratio = count.x/count.y) %>% 
+  rename(test_cnt = count.x, train_cnt = count.y) %>% 
+  arrange(ratio) %>% 
+  print %>% 
+  ggplot() +
+  geom_col(aes_string(col_name, "train_cnt"), fill='red', alpha = 0.5) +
+  geom_col(aes_string(col_name, "test_cnt"), fill='blue', alpha = 0.5) +
+  coord_flip() +
+  labs(x = x, y= y)+
+  readable_labs
+}
+```
+
+##### Source system tab
+
+Training set had more records from my library compared to test.
+
+```{r, message=FALSE, warning=FALSE}
+test_train_plot(train, test, col_name = "source_system_tab", 'Source system tab', 'Test/Train record Count')
+```
+
+
+##### Source screen name
+
+```{r}
+test_train_plot(train, test, col_name = "source_screen_name", "Source Screen Name", "Test/Train Count")
+```
+
+##### Source system tab
+
+```{r}
+test_train_plot(train, test, col_name = "source_type", "Source Type", "Test/Train Count")
+```
+
+
+### part 2. XGBoost
+```{r}
+library(reshape)
+library(reshape2)
+library(xgboost)
+library(caret)
+library(jsonlite)
+library(dplyr)
+library(Matrix)
+library(doParallel)
+library(lubridate)
+```
+
+
+```{r}
+train<-read.csv("/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project/train.csv")
+test<-read.csv("/Volumes/EricSeagate/HKUST/Term 2/Machine Learning/Individual Project/test.csv")
+
+train$key<-paste(train$msno,train$song_id,sep="_")
+test$key<-paste(test$msno,test$song_id,sep="_")
+
+train$id<-row.names(train)
+
+test$target<-''
+
+train$type<-'train'
+test$type<-'test'
+
+train1<-train[,c('key','type','id','source_system_tab','source_screen_name','source_type','target')]
+test1<-test[,c('key','type','id','source_system_tab','source_screen_name','source_type','target')]
+
+master_df<-rbind(train1,test1)
+
+rm(train)
+rm(test)
+rm(train1)
+rm(test1)
+
+
+#Creating source system tab based primary variables
+
+master_df$flag_source_system_tab_discover<-ifelse(master_df$source_system_tab=="discover",1,0)
+master_df$flag_source_system_tab_explore<-ifelse(master_df$source_system_tab=="explore",1,0)
+master_df$flag_source_system_tab_listen_with<-ifelse(master_df$source_system_tab=="listen with",1,0)
+master_df$flag_source_system_tab_my_library<-ifelse(master_df$source_system_tab=="my library",1,0)
+master_df$flag_source_system_tab_notification<-ifelse(master_df$source_system_tab=="notification",1,0)
+master_df$flag_source_system_tab_radio<-ifelse(master_df$source_system_tab=="radio",1,0)
+master_df$flag_source_system_tab_search<-ifelse(master_df$source_system_tab=="search",1,0)
+master_df$flag_source_system_tab_settings<-ifelse(master_df$source_system_tab=="settings",1,0)
+
+
+print("primary variables")
+#Creating source type based primary variables
+
+master_df$flag_source_type_song<-ifelse(master_df$source_type=="song",1,0)
+master_df$flag_source_type_song_based_playlist<-ifelse(master_df$source_type=="song-based-playlist",1,0)
+master_df$flag_source_type_top_hits_for_artist<-ifelse(master_df$source_type=="top-hits-for-artist",1,0)
+master_df$flag_source_type_topic_article_playlist<-ifelse(master_df$source_type=="topic-article-playlist",1,0)
+master_df$flag_source_type_my_daily_playlist<-ifelse(master_df$source_type=="my-daily-playlist",1,0)
+master_df$flag_source_type_online_playlist<-ifelse(master_df$source_type=="online-playlist",1,0)
+master_df$flag_source_type_listen_with<-ifelse(master_df$source_type=="listen-with",1,0)
+master_df$flag_source_type_local_library<-ifelse(master_df$source_type=="local-library",1,0)
+master_df$flag_source_type_local_playlist<-ifelse(master_df$source_type=="local-playlist",1,0)
+master_df$flag_source_type_album<-ifelse(master_df$source_type=="album",1,0)
+master_df$flag_source_type_artist<-ifelse(master_df$source_type=="artist",1,0)
+
+
+
+#Creating secondary variables combining source type and source tab information
+#For album
+master_df$flag_source_type_system_tab_album_discover<-master_df$flag_source_type_album*master_df$flag_source_system_tab_discover
+master_df$flag_source_type_system_tab_album_my_library<-master_df$flag_source_type_album*master_df$flag_source_system_tab_my_library
+master_df$flag_source_type_system_tab_album_search<-master_df$flag_source_type_album*master_df$flag_source_system_tab_search
+
+#For artist
+master_df$flag_source_type_system_tab_artist_my_library<-master_df$flag_source_type_artist*master_df$flag_source_system_tab_my_library
+
+#For listen with
+master_df$flag_source_type_system_tab_listen_with<-master_df$flag_source_system_tab_listen_with*master_df$flag_source_type_listen_with
+
+#For local library
+master_df$flag_source_type_system_tab_local_library_my_library<-master_df$flag_source_type_local_library*master_df$flag_source_system_tab_my_library
+master_df$flag_source_type_system_tab_local_library_discover<-master_df$flag_source_type_local_library*master_df$flag_source_system_tab_discover
+
+#For local playlist
+master_df$flag_source_type_system_tab_local_playlist_my_library<-master_df$flag_source_type_local_playlist*master_df$flag_source_system_tab_my_library
+
+#For online playlist
+master_df$flag_source_type_system_tab_online_playlist_discover<-master_df$flag_source_type_online_playlist*master_df$flag_source_system_tab_discover
+
+print("secondary variables")
+#For song
+master_df$flag_source_type_system_tab_song_search<-master_df$flag_source_type_song*master_df$flag_source_system_tab_search
+
+#For song based playlist
+master_df$flag_source_type_system_tab_song_based_playlist_discover<-master_df$flag_source_type_song_based_playlist*master_df$flag_source_system_tab_discover
+
+train_data<-master_df[master_df$type=='train',]
+test_data<-master_df[master_df$type=='test',]
+
+#training and test data creation
+train_data_xgb1<-master_df[master_df$type=="train",c(8:ncol(master_df))]
+test_data_xgb1<-master_df[master_df$type=="test",c(8:ncol(master_df))]
+
+train_data$target <- factor(train_data$target, levels = c(0,1), ordered = TRUE)
+ydata <- as.numeric(train_data$target)-1
+
+xdata <- Matrix(as.matrix(train_data_xgb1), sparse = TRUE)
+
+xdata_test_final <- Matrix(as.matrix(test_data_xgb1), sparse = TRUE)
+
+#####################Analysis done########################
+
+#####################XGBoost start########################
+# xgboost parameters
+param <- list("objective" = "multi:softprob",    # multiclass classification 
+              "num_class" = 2,    # number of classes 
+              "eval_metric" = "merror",    # evaluation metric 
+              "nthread" = 8,   # number of threads to be used 
+              "max_depth" = 16,    # maximum depth of tree 
+              "eta" = 0.3,    # step size shrinkage 
+              "gamma" = 0,    # minimum loss reduction 
+              "subsample" = 1,    # part of data instances to grow tree 
+              "colsample_bytree" = 1,  # subsample ratio of columns when constructing each tree 
+              "min_child_weight" = 12  # minimum sum of instance weight needed in a child 
+              )
+
+print("XGBoost")
+bst.cv <- xgb.cv(param=param, data=xdata, label=ydata, 
+              nfold=2, nrounds=30, prediction=TRUE, verbose=TRUE)
+
+min.merror.idx = which.min(bst.cv$evaluation_log[,test_merror_mean]) 
+
+xgb <- xgboost(param=param, data=xdata, label=ydata,
+                           nrounds=min.merror.idx, verbose=TRUE)
+
+
+pred_xgb <- predict(xgb, xdata_test_final, reshape = TRUE)
+
+
+pred_xgb2 <- as.data.frame(pred_xgb)
+names(pred_xgb2) <- c("zero","one")
+pred_xgb2$id <- test_data$id
+
+pred_xgb2$target <- ifelse(pred_xgb2$zero>pred_xgb2$one,0,1)
+
+pred_xgb3<-pred_xgb2[,c(3,4)]
+print("Export prediction")
+write.csv(pred_xgb3, "predictions.csv", row.names = FALSE)
+```
